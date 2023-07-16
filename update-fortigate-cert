@@ -161,6 +161,21 @@ class Fortigate:
             # so assume this means a success
             pass
 
+    def set_vpn_certificate(self, name, verify=True):
+        """Updates the Fortigate configuration to use a named certificate for HTTPS management."""
+        url = self._api("cmdb/vpn.ssl/settings")
+        set_default_body = {'servercert': name}
+        try:
+            response = requests.put(url, json=set_default_body, verify=verify)
+            if response.status_code != 200:
+                raise ApiRequestError(
+                    "Failed to set VPN certificate, the details are:\n {}".format(
+                        response.text))
+        except requests.exceptions.ConnectionError:
+            # The connection is often closed when the setting is updated,
+            # so assume this means a success
+            pass
+
     def get_https_mgmt_certificate(self, verify=True):
         """Retrieve the name of the certificate used for HTTPS management."""
         url = self._api("cmdb/system/global")
@@ -172,6 +187,18 @@ class Fortigate:
             raise ApiRequestError(
                 "Default certificate setting not present in response document.")
         return response.json()["results"]["admin-server-cert"]
+
+    def get_vpn_certificate(self, verify=True):
+        """Retrieve the name of the certificate used for HTTPS management."""
+        url = self._api("cmdb/vpn.ssl/settings")
+        response = requests.get(url, verify=verify)
+        if response.status_code != 200:
+            raise ApiRequestError(
+                "Failed to get default certificate, the details are:\n {}".format(response.text))
+        if "servercert" not in response.json()["results"]:
+            raise ApiRequestError(
+                "Default certificate setting not present in response document.")
+        return response.json()["results"]["servercert"]
 
     def get_expired_certificates(self, verify=True):
         """Iterate over certificate names that have expired."""
@@ -230,10 +257,15 @@ def _main():
     if not forti.certificate_exists(cert_name, verify=setup_verify_cert):
         forti.import_leaf_certificate(cert_name, cert_leaf, cert_privkey, verify=setup_verify_cert)
     forti.set_https_mgmt_certificate(cert_name, verify=setup_verify_cert)
+    forti.set_vpn_certificate(cert_name, verify=setup_verify_cert)
 
     # Use certificate verification to test connection for real now
     if not forti.get_https_mgmt_certificate() == cert_name:
         raise Error("Read-back validation of HTTPS management certificate failed")
+
+    # Use certificate verification for VPN certificate
+    if not forti.get_vpn_certificate() == cert_name:
+        raise Error("Read-back validation of VPN certificate failed")
 
     if prune_prefix == "":
         return
